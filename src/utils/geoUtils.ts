@@ -268,7 +268,78 @@ export function getCPAICentroid(cpai: CPAI): [number, number] {
 }
 
 /**
- * Neighboring States and Border Reference Nodes (from the official poster)
+ * Canonical Perimeter Coordinates for the complete State of Maranhão.
+ * Formed by the seamless union of the 9 CPAIs along the official state borders.
+ */
+export const MARANHAO_OUTER_BOUNDARY: [number, number][] = [
+  // 1. Coastline / Atlantic Ocean (North)
+  [-1.19, -46.01], // From CPAI-8 / Pará border
+  [-1.35, -45.50], // CPAI-8 -> CPAI-5 junction
+  [-1.60, -45.10], // CPAI-5 coastline
+  [-1.82, -44.86], // Cururupu / Guimarães
+  [-2.20, -44.50], // Baía de São Marcos entrance
+  [-2.40, -44.41], // Alcântara
+  [-2.55, -44.10], // CPAI-5 -> CPAI-7 junction (São Luís / Rosário approach)
+  [-2.75, -42.82], // CPAI-7 Lençóis Maranhenses
+  [-2.76, -42.27], // Tutóia
+  [-2.88, -41.88], // Araioses / Delta do Parnaíba
+
+  // 2. East Border with Piauí (Rio Parnaíba)
+  [-3.50, -42.40], // CPAI-7
+  [-3.80, -42.75], // CPAI-7 -> CPAI-4 junction
+  [-4.50, -42.70], // CPAI-4
+  [-5.09, -42.80], // Timon / Teresina
+  [-5.60, -43.15], // Matões / Parnarama
+  [-5.80, -43.50], // CPAI-4 -> CPAI-9 junction
+  [-6.30, -43.30], // CPAI-9
+  [-6.76, -43.02], // Barão de Grajaú / Floriano
+  [-7.15, -43.60], // CPAI-9 -> CPAI-6 junction
+  [-7.80, -44.10], // CPAI-6
+  [-8.60, -44.80], // CPAI-6
+  [-9.50, -45.40], // CPAI-6 Alto Parnaíba valley
+
+  // 3. Southernmost Tip (Nascentes do Parnaíba)
+  [-10.25, -45.90], // CPAI-6 Extremo Sul do Maranhão
+
+  // 4. West / Southwest Border with Tocantins (Rio Tocantins)
+  [-9.20, -46.40], // CPAI-6
+  [-8.50, -46.80], // CPAI-6
+  [-7.80, -47.20], // CPAI-6
+  [-7.10, -47.40], // CPAI-6 -> CPAI-3 junction
+  [-6.56, -47.45], // Estreito (CPAI-3)
+  [-6.10, -47.40], // Porto Franco (CPAI-3)
+  [-5.52, -47.47], // Imperatriz (CPAI-3)
+  [-4.95, -47.50], // Açailândia / Rio Tocantins (CPAI-3)
+
+  // 5. Northwest Border with Pará (Rio Gurupi)
+  [-4.20, -46.60], // CPAI-3 -> CPAI-8 junction
+  [-3.90, -47.10], // CPAI-8
+  [-3.40, -47.05], // CPAI-8
+  [-2.80, -46.85], // CPAI-8
+  [-2.10, -46.50], // CPAI-8
+  [-1.25, -46.05], // CPAI-8 Foz do Rio Gurupi
+  [-1.19, -46.01], // Back to start
+];
+
+/**
+ * Generates an inverted mask polygon (world polygon with a hole for Maranhão)
+ * used to completely block out neighboring states and reveal ONLY Maranhão.
+ */
+export function getMaranhaoMaskPolygon(): [number, number][][] {
+  const worldOuterRing: [number, number][] = [
+    [-85, -180],
+    [-85, 180],
+    [85, 180],
+    [85, -180],
+    [-85, -180],
+  ];
+
+  return [worldOuterRing, MARANHAO_OUTER_BOUNDARY];
+}
+
+/**
+ * Neighboring States and Border Reference Nodes (kept empty per user request:
+ * "NÃO MOSTRAR ESTADOS VIZINHOS PARA NÃO ATRAPALHAR A VISUALIZAÇÃO DO MAPA DO ESTADO")
  */
 export interface NeighborStateLabel {
   name: string;
@@ -281,8 +352,9 @@ export const NEIGHBOR_LABELS: NeighborStateLabel[] = [
   { name: 'PARÁ', lat: -4.3, lng: -48.6, type: 'state' },
   { name: 'TOCANTINS', lat: -7.8, lng: -48.3, type: 'state' },
   { name: 'PIAUÍ', lat: -5.9, lng: -42.1, type: 'state' },
+  { name: 'CEARÁ', lat: -4.5, lng: -40.2, type: 'state' },
   { name: 'OCEANO ATLÂNTICO', lat: -0.95, lng: -44.2, type: 'ocean' },
-  // Border cities for geographical orientation
+  // Border cities for geographical orientation when neighbor states are enabled
   { name: 'Belém (PA)', lat: -1.4558, lng: -48.4902, type: 'city' },
   { name: 'Teresina (PI)', lat: -5.0920, lng: -42.8038, type: 'city' },
   { name: 'Parnaíba (PI)', lat: -2.9031, lng: -41.7769, type: 'city' },
@@ -329,7 +401,7 @@ export const HIGHWAY_NETWORK: HighwayRoute[] = [
       [-3.66, -45.38], // Santa Inês
       [-3.27, -45.65], // Zé Doca
       [-2.13, -45.86], // Gov. Nunes Freire
-      [-1.45, -48.49], // Divisa PA (Belém)
+      [-1.85, -46.10], // Divisa MA/PA
     ],
   },
   {

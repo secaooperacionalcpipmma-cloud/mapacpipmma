@@ -10,6 +10,8 @@ import {
   MARANHAO_DEFAULT_ZOOM,
   NEIGHBOR_LABELS,
   HIGHWAY_NETWORK,
+  MARANHAO_OUTER_BOUNDARY,
+  getMaranhaoMaskPolygon,
 } from '../utils/geoUtils';
 import { Maximize2, Minimize2, RotateCcw, Monitor, Layers } from 'lucide-react';
 import { MapTileTheme } from './ProjectionHUD';
@@ -54,14 +56,14 @@ const TILE_URLS: Record<MapTileTheme, { url: string; subdomains: string | string
     maxZoom: 20,
   },
   voyager: {
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    subdomains: 'abcd',
-    maxZoom: 19,
+    url: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'],
+    maxZoom: 20,
   },
   dark: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    subdomains: 'abcd',
-    maxZoom: 19,
+    url: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'],
+    maxZoom: 20,
   },
   satellite: {
     url: 'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
@@ -97,6 +99,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const currentThemeRef = useRef<MapTileTheme>(mapTheme);
 
+  const maskLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const polygonsLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const cpaiLabelsLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const highwaysLayerGroupRef = useRef<L.LayerGroup | null>(null);
@@ -110,6 +113,11 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
+    const maxBounds: L.LatLngBoundsExpression = [
+      [-11.2, -49.6],
+      [-0.4, -40.6],
+    ];
+
     const map = L.map(mapContainerRef.current, {
       center: MARANHAO_CENTER,
       zoom: MARANHAO_DEFAULT_ZOOM,
@@ -117,17 +125,23 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       attributionControl: false,
       minZoom: 5,
       maxZoom: 18,
+      maxBounds: maxBounds,
+      maxBoundsViscosity: 1.0,
       fadeAnimation: true,
       zoomAnimation: true,
     });
 
-    const cfg = TILE_URLS[mapTheme] || TILE_URLS.voyager;
+    const cfg = TILE_URLS[mapTheme] || TILE_URLS['google-roadmap'];
     const tileLayer = L.tileLayer(cfg.url, {
       subdomains: cfg.subdomains,
       maxZoom: cfg.maxZoom,
     }).addTo(map);
     tileLayerRef.current = tileLayer;
     currentThemeRef.current = mapTheme;
+
+    // Create custom pane for the Inverse Mask
+    const maskPane = map.createPane('maranhaoMaskPane');
+    maskPane.style.zIndex = '350';
 
     // Zoom control at bottom right
     L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -141,6 +155,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       .addTo(map);
 
     // Create Layer Groups in optimal z-index stack order
+    maskLayerGroupRef.current = L.layerGroup().addTo(map);
     polygonsLayerGroupRef.current = L.layerGroup().addTo(map);
     highwaysLayerGroupRef.current = L.layerGroup().addTo(map);
     neighborLabelsLayerGroupRef.current = L.layerGroup().addTo(map);
@@ -167,6 +182,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       }
       mapInstanceRef.current = null;
       tileLayerRef.current = null;
+      maskLayerGroupRef.current = null;
       polygonsLayerGroupRef.current = null;
       highwaysLayerGroupRef.current = null;
       neighborLabelsLayerGroupRef.current = null;
@@ -226,6 +242,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
     const map = mapInstanceRef.current;
     if (!map) return;
 
+    const maskGroup = maskLayerGroupRef.current;
     const polyGroup = polygonsLayerGroupRef.current;
     const highwaysGroup = highwaysLayerGroupRef.current;
     const neighborGroup = neighborLabelsLayerGroupRef.current;
@@ -235,6 +252,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
 
     if (!polyGroup || !batGroup || !munGroup || !highwaysGroup || !neighborGroup || !cpaiLabelsGroup) return;
 
+    if (maskGroup) maskGroup.clearLayers();
     polyGroup.clearLayers();
     highwaysGroup.clearLayers();
     neighborGroup.clearLayers();
@@ -242,54 +260,42 @@ export const MapContainer: React.FC<MapContainerProps> = ({
     batGroup.clearLayers();
     munGroup.clearLayers();
 
-    // 1. Draw Neighbor States & Ocean Watermarks
-    NEIGHBOR_LABELS.forEach((label) => {
-      if (label.type === 'ocean') {
-        const oceanHtml = `
-          <div class="pointer-events-none select-none text-center">
-            <span class="text-xs sm:text-sm font-black tracking-[0.25em] text-sky-800/80 uppercase font-serif drop-shadow-xs">
-              🌊 ${label.name}
-            </span>
-          </div>
-        `;
-        const oceanIcon = L.divIcon({
-          className: 'custom-ocean-label',
-          html: oceanHtml,
-          iconSize: [220, 30],
-          iconAnchor: [110, 15],
-        });
-        neighborGroup.addLayer(L.marker([label.lat, label.lng], { icon: oceanIcon, interactive: false }));
-      } else if (label.type === 'state') {
-        const stateHtml = `
-          <div class="pointer-events-none select-none text-center">
-            <span class="text-xs sm:text-base font-black tracking-[0.3em] text-slate-600/75 uppercase font-serif px-2 py-0.5 rounded border border-slate-300/40 bg-white/40 backdrop-blur-2xs shadow-2xs">
-              ${label.name}
-            </span>
-          </div>
-        `;
-        const stateIcon = L.divIcon({
-          className: 'custom-state-label',
-          html: stateHtml,
-          iconSize: [160, 32],
-          iconAnchor: [80, 16],
-        });
-        neighborGroup.addLayer(L.marker([label.lat, label.lng], { icon: stateIcon, interactive: false }));
-      } else if (label.type === 'city') {
-        const cityHtml = `
-          <div class="pointer-events-none select-none flex items-center gap-1 bg-white/70 backdrop-blur-2xs px-1.5 py-0.5 rounded border border-slate-300 text-[9px] font-bold text-slate-600 shadow-2xs">
-            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-            <span>${label.name}</span>
-          </div>
-        `;
-        const cityIcon = L.divIcon({
-          className: 'custom-border-city',
-          html: cityHtml,
-          iconSize: [110, 22],
-          iconAnchor: [55, 11],
-        });
-        neighborGroup.addLayer(L.marker([label.lat, label.lng], { icon: cityIcon, interactive: false }));
-      }
-    });
+    // 1. Draw Maranhão Boundary & Inverse Mask (Hiding neighboring states completely)
+    if (maskGroup) {
+      const isDarkTheme = mapTheme === 'dark' || mapTheme === 'satellite' || mapTheme === 'google-hybrid';
+      const maskBgColor = isDarkTheme ? '#090d16' : '#f8fafc';
+      const borderColor = isDarkTheme ? '#38bdf8' : '#002B55';
+
+      // Solid Polygon covering all surrounding states outside Maranhão
+      const maskPolygon = L.polygon(getMaranhaoMaskPolygon(), {
+        pane: 'maranhaoMaskPane',
+        stroke: false,
+        fillColor: maskBgColor,
+        fillOpacity: 1.0,
+        interactive: false,
+      });
+      maskGroup.addLayer(maskPolygon);
+
+      // Official State Boundary Line
+      const borderLine = L.polyline(MARANHAO_OUTER_BOUNDARY, {
+        pane: 'maranhaoMaskPane',
+        color: borderColor,
+        weight: 3.5,
+        opacity: 0.95,
+        interactive: false,
+      });
+      maskGroup.addLayer(borderLine);
+
+      // Border halo for visual elevation
+      const borderHalo = L.polyline(MARANHAO_OUTER_BOUNDARY, {
+        pane: 'maranhaoMaskPane',
+        color: isDarkTheme ? 'rgba(56,189,248,0.2)' : 'rgba(0,43,85,0.15)',
+        weight: 8,
+        opacity: 0.8,
+        interactive: false,
+      });
+      maskGroup.addLayer(borderHalo);
+    }
 
     // 2. Draw Federal Highways (BR Network)
     HIGHWAY_NETWORK.forEach((hw) => {

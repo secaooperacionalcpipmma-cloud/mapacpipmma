@@ -13,6 +13,10 @@ import {
   MapPin,
   ChevronDown,
   ChevronUp,
+  Eye,
+  EyeOff,
+  Sun,
+  Tag,
 } from 'lucide-react';
 import {
   getCPAIPolygon,
@@ -21,6 +25,8 @@ import {
   MARANHAO_CENTER,
   MARANHAO_DEFAULT_ZOOM,
   HIGHWAY_NETWORK,
+  MARANHAO_OUTER_BOUNDARY,
+  getMaranhaoMaskPolygon,
   NEIGHBOR_LABELS,
 } from '../utils/geoUtils';
 
@@ -33,6 +39,35 @@ interface CleanStaticMapProps {
   onOpenSubunidades?: () => void;
 }
 
+// High-contrast, rich official military briefing palette for each CPAI
+const HIGH_CONTRAST_PALETTE: Record<
+  string,
+  { fill: string; border: string; badge: string; text: string }
+> = {
+  'CPAI-1': { fill: '#F59E0B', border: '#78350F', badge: '#D97706', text: '#FFFFFF' }, // Mearim / Bacabal
+  'CPAI-2': { fill: '#0284C7', border: '#0C4A6E', badge: '#0369A1', text: '#FFFFFF' }, // Centro / Barra do Corda
+  'CPAI-3': { fill: '#EA580C', border: '#7C2D12', badge: '#C2410C', text: '#FFFFFF' }, // Tocantina / Imperatriz
+  'CPAI-4': { fill: '#2563EB', border: '#1E3A8A', badge: '#1D4ED8', text: '#FFFFFF' }, // Leste / Caxias
+  'CPAI-5': { fill: '#D946EF', border: '#701A75', badge: '#C026D3', text: '#FFFFFF' }, // Baixada / Pinheiro
+  'CPAI-6': { fill: '#0D9488', border: '#134E4A', badge: '#0F766E', text: '#FFFFFF' }, // Sul / Balsas
+  'CPAI-7': { fill: '#16A34A', border: '#064E3B', badge: '#15803D', text: '#FFFFFF' }, // Lençóis / Rosário
+  'CPAI-8': { fill: '#7C3AED', border: '#4C1D95', badge: '#6D28D9', text: '#FFFFFF' }, // Alto Turiaçu / Zé Doca
+  'CPAI-9': { fill: '#E11D48', border: '#881337', badge: '#BE123C', text: '#FFFFFF' }, // Médio Parnaíba / Patos
+};
+
+// Calibrated centroid coordinates for the 9 large CPAI regional floating badges
+const CPAI_CENTROIDS: Record<string, [number, number]> = {
+  'CPAI-1': [-4.38, -44.82],
+  'CPAI-2': [-5.45, -44.85],
+  'CPAI-3': [-5.40, -46.75],
+  'CPAI-4': [-4.85, -43.40],
+  'CPAI-5': [-2.50, -45.10],
+  'CPAI-6': [-8.10, -45.80],
+  'CPAI-7': [-3.15, -43.20],
+  'CPAI-8': [-3.30, -46.10],
+  'CPAI-9': [-6.50, -43.80],
+};
+
 export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
   allCPAIs,
   selectedCPAIId,
@@ -43,18 +78,30 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
+  const maskLayerRef = useRef<L.LayerGroup | null>(null);
   const polygonsLayerRef = useRef<L.LayerGroup | null>(null);
+  const cpaiLabelsLayerRef = useRef<L.LayerGroup | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const highwaysLayerRef = useRef<L.LayerGroup | null>(null);
+  const neighborsLayerRef = useRef<L.LayerGroup | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
 
-  const [mapTheme, setMapTheme] = useState<'voyager' | 'terrain' | 'satellite'>('voyager');
+  const [mapTheme, setMapTheme] = useState<'cartografica' | 'relevo' | 'satelite' | 'vetorial'>('cartografica');
+  const [showNeighborStates, setShowNeighborStates] = useState(false);
+  const [highContrast, setHighContrast] = useState(true);
+  const [detailedLabels, setDetailedLabels] = useState(false);
   const [isTableCollapsed, setIsTableCollapsed] = useState(false);
   const [isLegendCollapsed, setIsLegendCollapsed] = useState(false);
 
   // Initialize Leaflet Map
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
+
+    // Hard boundary lock so user cannot pan outside Maranhão
+    const maxBounds: L.LatLngBoundsExpression = [
+      [-11.2, -49.6],
+      [-0.4, -40.6],
+    ];
 
     const map = L.map(mapContainerRef.current, {
       center: MARANHAO_CENTER,
@@ -63,27 +110,29 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
       attributionControl: false,
       minZoom: 6,
       maxZoom: 16,
+      maxBounds: maxBounds,
+      maxBoundsViscosity: 1.0,
       fadeAnimation: true,
     });
 
     mapInstanceRef.current = map;
 
-    // Tile Layer: Default Voyager for high-contrast official cartographic aesthetic
-    const tileLayer = L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      {
-        subdomains: 'abcd',
-        maxZoom: 19,
-      }
-    ).addTo(map);
-    tileLayerRef.current = tileLayer;
+    // Create custom panes with explicit z-index hierarchy
+    const maskPane = map.createPane('maranhaoMaskPane');
+    maskPane.style.zIndex = '350';
+
+    const cpaiLabelsPane = map.createPane('cpaiLabelsPane');
+    cpaiLabelsPane.style.zIndex = '450';
 
     // Layer Groups
+    maskLayerRef.current = L.layerGroup().addTo(map);
     polygonsLayerRef.current = L.layerGroup().addTo(map);
     highwaysLayerRef.current = L.layerGroup().addTo(map);
+    neighborsLayerRef.current = L.layerGroup().addTo(map);
+    cpaiLabelsLayerRef.current = L.layerGroup().addTo(map);
     markersLayerRef.current = L.layerGroup().addTo(map);
 
-    // Initial fit
+    // Initial fit strictly on Maranhão
     const bounds = getMaranhaoBounds();
     map.fitBounds(bounds, { padding: [20, 20], maxZoom: 8 });
 
@@ -93,27 +142,188 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
     };
   }, []);
 
-  // Update Tile Theme
+  // Update Tile Theme, Mask and Neighbor States View
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!map || !tileLayerRef.current) return;
+    if (!map) return;
 
-    map.removeLayer(tileLayerRef.current);
-
-    let url = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-    let subdomains: string | string[] = 'abcd';
-
-    if (mapTheme === 'terrain') {
-      url = 'https://mt{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}';
-      subdomains = ['0', '1', '2', '3'];
-    } else if (mapTheme === 'satellite') {
-      url = 'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
-      subdomains = ['0', '1', '2', '3'];
+    // 1. Remove previous tile layer if any
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+      tileLayerRef.current = null;
     }
 
-    const newTileLayer = L.tileLayer(url, { subdomains, maxZoom: 19 }).addTo(map);
-    tileLayerRef.current = newTileLayer;
-  }, [mapTheme]);
+    // 2. Add high-reliability basemap without any watermarks
+    if (mapTheme === 'cartografica') {
+      const tile = L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+        subdomains: ['0', '1', '2', '3'],
+        maxZoom: 19,
+      }).addTo(map);
+      tileLayerRef.current = tile;
+      tile.bringToBack();
+    } else if (mapTheme === 'relevo') {
+      const tile = L.tileLayer('https://mt{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}', {
+        subdomains: ['0', '1', '2', '3'],
+        maxZoom: 19,
+      }).addTo(map);
+      tileLayerRef.current = tile;
+      tile.bringToBack();
+    } else if (mapTheme === 'satelite') {
+      const tile = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        subdomains: ['0', '1', '2', '3'],
+        maxZoom: 19,
+      }).addTo(map);
+      tileLayerRef.current = tile;
+      tile.bringToBack();
+    }
+
+    // 3. Manage Surrounding States (Mask vs Revealed Neighbors)
+    const maskGroup = maskLayerRef.current;
+    const neighborsGroup = neighborsLayerRef.current;
+
+    if (maskGroup) maskGroup.clearLayers();
+    if (neighborsGroup) neighborsGroup.clearLayers();
+
+    if (!showNeighborStates) {
+      // MASK IS ACTIVE: Completely hide surrounding states with solid background
+      if (maskGroup) {
+        const maskBgColor = mapTheme === 'satelite' ? '#070b14' : '#f8fafc';
+        const borderColor = mapTheme === 'satelite' ? '#38bdf8' : '#002B55';
+
+        // Solid Inverse Mask Polygon
+        const maskPolygon = L.polygon(getMaranhaoMaskPolygon(), {
+          pane: 'maranhaoMaskPane',
+          stroke: false,
+          fillColor: maskBgColor,
+          fillOpacity: 1.0,
+          interactive: false,
+        });
+        maskGroup.addLayer(maskPolygon);
+
+        // State Border Outline
+        const borderLine = L.polyline(MARANHAO_OUTER_BOUNDARY, {
+          pane: 'maranhaoMaskPane',
+          color: borderColor,
+          weight: 4,
+          opacity: 0.95,
+          interactive: false,
+        });
+        maskGroup.addLayer(borderLine);
+
+        // Border halo for visual elevation
+        const borderHalo = L.polyline(MARANHAO_OUTER_BOUNDARY, {
+          pane: 'maranhaoMaskPane',
+          color: mapTheme === 'satelite' ? 'rgba(56,189,248,0.3)' : 'rgba(0,43,85,0.2)',
+          weight: 8,
+          opacity: 0.8,
+          interactive: false,
+        });
+        maskGroup.addLayer(borderHalo);
+      }
+
+      // Restrict panning strictly to Maranhão
+      map.setMaxBounds([
+        [-11.2, -49.6],
+        [-0.4, -40.6],
+      ]);
+    } else {
+      // NEIGHBORS ARE VISIBLE: Reveal Pará, Tocantins, Piauí, Ceará and Ocean
+      map.setMaxBounds([
+        [-13.5, -53.0],
+        [1.0, -37.5],
+      ]);
+
+      // Highlight the Maranhão official border with a clear demarcation line
+      if (maskGroup) {
+        const borderLine = L.polyline(MARANHAO_OUTER_BOUNDARY, {
+          pane: 'maranhaoMaskPane',
+          color: '#002B55',
+          weight: 4,
+          opacity: 0.95,
+          dashArray: '8, 5',
+          interactive: false,
+        });
+        maskGroup.addLayer(borderLine);
+      }
+
+      // Render subtle, high-contrast labels for neighboring regions
+      if (neighborsGroup) {
+        NEIGHBOR_LABELS.forEach((label) => {
+          if (label.type === 'state') {
+            const stateHtml = `
+              <div class="pointer-events-none select-none text-center">
+                <span style="
+                  font-size: 13px;
+                  font-weight: 900;
+                  letter-spacing: 0.25em;
+                  color: #1e293b;
+                  background: rgba(255,255,255,0.9);
+                  border: 2px solid #64748b;
+                  box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+                  padding: 3px 12px;
+                  border-radius: 6px;
+                  text-transform: uppercase;
+                  font-family: serif;
+                  white-space: nowrap;
+                ">
+                  ${label.name}
+                </span>
+              </div>
+            `;
+            const icon = L.divIcon({
+              html: stateHtml,
+              className: 'custom-neighbor-state',
+              iconSize: [140, 30],
+              iconAnchor: [70, 15],
+            });
+            neighborsGroup.addLayer(L.marker([label.lat, label.lng], { icon, interactive: false }));
+          } else if (label.type === 'ocean') {
+            const oceanHtml = `
+              <div class="pointer-events-none select-none text-center">
+                <span style="
+                  font-size: 12px;
+                  font-weight: 900;
+                  letter-spacing: 0.25em;
+                  color: #0369a1;
+                  background: rgba(240,249,255,0.95);
+                  border: 1.5px solid #38bdf8;
+                  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+                  padding: 3px 10px;
+                  border-radius: 6px;
+                  text-transform: uppercase;
+                  font-family: serif;
+                  white-space: nowrap;
+                ">
+                  🌊 ${label.name}
+                </span>
+              </div>
+            `;
+            const icon = L.divIcon({
+              html: oceanHtml,
+              className: 'custom-neighbor-ocean',
+              iconSize: [220, 28],
+              iconAnchor: [110, 14],
+            });
+            neighborsGroup.addLayer(L.marker([label.lat, label.lng], { icon, interactive: false }));
+          } else if (label.type === 'city') {
+            const cityHtml = `
+              <div class="pointer-events-none select-none flex items-center gap-1.5 bg-white/95 px-2 py-0.5 rounded border border-slate-400 text-[10px] font-bold text-slate-700 shadow-xs whitespace-nowrap">
+                <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                <span>${label.name}</span>
+              </div>
+            `;
+            const icon = L.divIcon({
+              html: cityHtml,
+              className: 'custom-border-city',
+              iconSize: [110, 22],
+              iconAnchor: [55, 11],
+            });
+            neighborsGroup.addLayer(L.marker([label.lat, label.lng], { icon, interactive: false }));
+          }
+        });
+      }
+    }
+  }, [mapTheme, showNeighborStates]);
 
   // Render Realistic Highways
   useEffect(() => {
@@ -123,78 +333,192 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
 
     HIGHWAY_NETWORK.forEach((hw) => {
       const line = L.polyline(hw.points, {
-        color: '#b91c1c',
-        weight: 2,
-        opacity: 0.6,
-        dashArray: '5, 5',
+        color: highContrast ? '#b91c1c' : '#dc2626',
+        weight: highContrast ? 2.5 : 2.0,
+        opacity: highContrast ? 0.75 : 0.55,
+        dashArray: '6, 4',
       });
       layer.addLayer(line);
     });
-  }, []);
+  }, [highContrast]);
 
-  // Render CPAI Polygons and Battalion Markers
+  // Render High-Contrast CPAI Polygons, Regional Badges, and Battalion Markers
   useEffect(() => {
     const map = mapInstanceRef.current;
     const polyLayer = polygonsLayerRef.current;
+    const labelsLayer = cpaiLabelsLayerRef.current;
     const markLayer = markersLayerRef.current;
-    if (!map || !polyLayer || !markLayer) return;
+    if (!map || !polyLayer || !labelsLayer || !markLayer) return;
 
     polyLayer.clearLayers();
+    labelsLayer.clearLayers();
     markLayer.clearLayers();
 
     allCPAIs.forEach((cpai) => {
       const isSelected = selectedCPAIId === cpai.id;
       const isDimmed = selectedCPAIId !== null && !isSelected;
+      const contrast = HIGH_CONTRAST_PALETTE[cpai.id];
+
+      const fillColor = highContrast ? (contrast?.fill || cpai.cor) : cpai.cor;
+      const borderColor = isSelected
+        ? '#ffffff'
+        : highContrast
+        ? (contrast?.border || '#0f172a')
+        : (cpai.corEscura || cpai.cor);
+
+      const fillOpacity = isDimmed
+        ? 0.12
+        : isSelected
+        ? 0.78
+        : highContrast
+        ? 0.52 // Enhanced presentation contrast: vibrant, solid and clearly distinguished
+        : 0.28;
 
       const polygonCoords = getCPAIPolygon(cpai);
       if (polygonCoords.length > 2) {
         const poly = L.polygon(polygonCoords, {
-          color: cpai.corEscura || cpai.cor,
-          weight: isSelected ? 3.5 : 2,
-          opacity: isDimmed ? 0.25 : 0.9,
-          fillColor: cpai.cor,
-          fillOpacity: isDimmed ? 0.08 : isSelected ? 0.45 : 0.25,
+          color: borderColor,
+          weight: isSelected ? 4.5 : highContrast ? 3.0 : 2.0,
+          opacity: isDimmed ? 0.25 : 0.95,
+          fillColor: fillColor,
+          fillOpacity: fillOpacity,
         });
 
         poly.on('click', () => {
           onSelectCPAI(isSelected ? null : cpai.id);
         });
 
-        // Tooltip
         poly.bindTooltip(
-          `<strong>${cpai.id}</strong><br/>${cpai.batalhoes.length} Batalhões`,
+          `<strong>${cpai.id}</strong><br/>${cpai.batalhoes.length} Batalhões Subordinados`,
           { sticky: true, className: 'cpi-leaflet-tooltip' }
         );
 
         polyLayer.addLayer(poly);
       }
 
-      // Battalion Markers
+      // 1. Prominent Floating Region Badge in Centroid
+      const centroid = CPAI_CENTROIDS[cpai.id] || [-5.0, -45.0];
+      const badgeHtml = `
+        <div style="
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          background: ${isSelected ? '#ffffff' : '#002B55'};
+          color: ${isSelected ? (contrast?.border || '#002B55') : '#ffffff'};
+          border: 2.5px solid ${isSelected ? (contrast?.border || '#002B55') : '#facc15'};
+          box-shadow: 0 4px 14px rgba(0,0,0,0.55);
+          padding: 3px 9px;
+          border-radius: 9999px;
+          font-weight: 900;
+          font-size: 12px;
+          letter-spacing: 0.05em;
+          cursor: pointer;
+          transform: translate(-50%, -50%);
+          white-space: nowrap;
+          pointer-events: auto;
+          transition: transform 0.15s ease;
+        ">
+          <span style="width: 9px; height: 9px; border-radius: 50%; background: ${fillColor}; border: 1.5px solid #ffffff; flex-shrink: 0;"></span>
+          <span>${cpai.id}</span>
+          <span style="font-size: 9.5px; opacity: 0.85; font-weight: 700; background: rgba(0,0,0,0.25); padding: 0.5px 5px; border-radius: 9999px;">${cpai.batalhoes.length} BPMs</span>
+        </div>
+      `;
+
+      const badgeIcon = L.divIcon({
+        html: badgeHtml,
+        className: 'static-cpai-badge',
+        iconSize: [0, 0],
+      });
+
+      const badgeMarker = L.marker(centroid, {
+        icon: badgeIcon,
+        pane: 'cpaiLabelsPane',
+        interactive: true,
+      });
+
+      badgeMarker.on('click', () => {
+        onSelectCPAI(isSelected ? null : cpai.id);
+      });
+
+      labelsLayer.addLayer(badgeMarker);
+
+      // 2. Battalion Markers with High Contrast and Clutter Prevention
       cpai.batalhoes.forEach((bat) => {
         const isBatSelected = isSelected;
         const isCosar = bat.cosar;
 
-        // Custom HTML Marker Icon
-        const iconHtml = `
-          <div style="
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: ${isCosar ? '#059669' : cpai.cor};
-            color: #ffffff;
-            font-size: 10px;
-            font-weight: 900;
-            padding: 2px 5px;
-            border-radius: 4px;
-            border: 1.5px solid #ffffff;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.35);
-            white-space: nowrap;
-            cursor: pointer;
-            transform: translate(-50%, -50%);
-          ">
-            ${isCosar ? '🌲 COSAR • ' : ''}${bat.numero}
-          </div>
-        `;
+        let iconHtml = '';
+
+        if (isCosar) {
+          // Special distinct badge for COSAR in Bacabal
+          iconHtml = `
+            <div style="
+              display: flex;
+              align-items: center;
+              gap: 4px;
+              background: #047857;
+              color: #ffffff;
+              font-size: 11px;
+              font-weight: 900;
+              padding: 2.5px 8px;
+              border-radius: 9999px;
+              border: 2px solid #facc15;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+              cursor: pointer;
+              white-space: nowrap;
+              transform: translate(-50%, -50%);
+            ">
+              <span>🌲</span>
+              <span>COSAR</span>
+              <span style="opacity: 0.85; font-size: 9.5px;">(${bat.numero})</span>
+            </div>
+          `;
+        } else if (detailedLabels) {
+          // Detailed Mode: Shows BPM number + Headquarters city
+          iconHtml = `
+            <div style="
+              display: flex;
+              align-items: center;
+              gap: 3px;
+              background: ${isBatSelected ? '#ffffff' : (contrast?.badge || cpai.cor)};
+              color: ${isBatSelected ? (contrast?.border || '#000000') : '#ffffff'};
+              font-size: 10px;
+              font-weight: 900;
+              padding: 2px 6px;
+              border-radius: 5px;
+              border: 1.5px solid ${isBatSelected ? (contrast?.border || '#000') : '#ffffff'};
+              box-shadow: 0 3px 8px rgba(0,0,0,0.45);
+              white-space: nowrap;
+              cursor: pointer;
+              transform: translate(-50%, -50%);
+            ">
+              <span>${bat.numero}</span>
+              <span style="font-size: 8.5px; opacity: 0.9; font-weight: 700;">(${bat.sede})</span>
+            </div>
+          `;
+        } else {
+          // Compact Mode: High contrast circular badge (avoids overlapping clutters)
+          iconHtml = `
+            <div style="
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              background: ${isBatSelected ? '#ffffff' : (contrast?.badge || cpai.cor)};
+              color: ${isBatSelected ? (contrast?.border || '#000000') : '#ffffff'};
+              font-size: 10.5px;
+              font-weight: 900;
+              padding: 2px 6px;
+              border-radius: 9999px;
+              border: 2px solid ${isBatSelected ? (contrast?.border || '#000') : '#ffffff'};
+              box-shadow: 0 3px 8px rgba(0,0,0,0.5);
+              white-space: nowrap;
+              cursor: pointer;
+              transform: translate(-50%, -50%);
+            ">
+              ${bat.numero}
+            </div>
+          `;
+        }
 
         const icon = L.divIcon({
           html: iconHtml,
@@ -208,7 +532,7 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
         });
 
         marker.bindTooltip(
-          `<strong>${bat.numero} — ${bat.nome}</strong><br/>Sede: ${bat.sede}${
+          `<strong>${bat.numero} — ${bat.nome}</strong><br/>Sede: <strong>${bat.sede}</strong>${
             isCosar ? '<br/><span style="color:#059669;font-weight:bold;">🌲 Base Estadual COSAR</span>' : ''
           }`,
           { direction: 'top', offset: [0, -10] }
@@ -229,7 +553,7 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
       const bounds = getMaranhaoBounds();
       map.fitBounds(bounds, { padding: [20, 20], maxZoom: 8, animate: true, duration: 1 });
     }
-  }, [allCPAIs, selectedCPAIId, onSelectCPAI, onSelectBattalion]);
+  }, [allCPAIs, selectedCPAIId, highContrast, detailedLabels, onSelectCPAI, onSelectBattalion]);
 
   const handleResetView = () => {
     onSelectCPAI(null);
@@ -361,33 +685,103 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
           })}
         </div>
 
-        {/* Theme Selector (Voyager / Terrain / Satellite) */}
-        <div className="hidden sm:flex items-center gap-1 text-[11px] font-bold">
-          <span className="text-slate-300 mr-1">Camada:</span>
+        {/* Controls: Estados ao Redor, Alto Contraste, Rótulos, e Temas de Mapa */}
+        <div className="flex items-center gap-1.5 text-[11px] font-bold flex-wrap justify-end">
+          {/* BOTÃO SOLICITADO: Ativar/Desativar Visualização dos Estados ao Redor */}
           <button
-            onClick={() => setMapTheme('voyager')}
-            className={`px-2 py-0.5 rounded transition ${
-              mapTheme === 'voyager' ? 'bg-amber-400 text-slate-950 font-black' : 'bg-white/10 hover:bg-white/20'
+            onClick={() => setShowNeighborStates(!showNeighborStates)}
+            className={`px-2.5 py-1 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm ${
+              showNeighborStates
+                ? 'bg-emerald-500 text-white font-black ring-1 ring-white'
+                : 'bg-white/15 hover:bg-white/25 text-slate-100 border border-white/20'
             }`}
+            title={
+              showNeighborStates
+                ? 'Estados ao redor VISÍVEIS (Pará, Tocantins, Piauí, etc.). Clique para ocultar e isolar apenas o Maranhão'
+                : 'Clique para ATIVAR a visualização dos Estados ao Redor (Pará, Tocantins, Piauí, Ceará)'
+            }
           >
-            Cartográfica
+            {showNeighborStates ? (
+              <>
+                <Eye className="w-3.5 h-3.5 text-white" />
+                <span>Estados ao Redor: ON</span>
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-3.5 h-3.5 text-amber-300" />
+                <span>Ativar Estados ao Redor</span>
+              </>
+            )}
           </button>
+
+          {/* BOTÃO: Alto Contraste de Apresentação */}
           <button
-            onClick={() => setMapTheme('terrain')}
-            className={`px-2 py-0.5 rounded transition ${
-              mapTheme === 'terrain' ? 'bg-amber-400 text-slate-950 font-black' : 'bg-white/10 hover:bg-white/20'
+            onClick={() => setHighContrast(!highContrast)}
+            className={`px-2.5 py-1 rounded transition flex items-center gap-1 cursor-pointer shadow-sm ${
+              highContrast
+                ? 'bg-amber-400 text-slate-950 font-black ring-1 ring-amber-300'
+                : 'bg-white/10 hover:bg-white/20 text-slate-200 border border-white/20'
             }`}
+            title="Alternar paleta vibrante de Alto Contraste (ideal para projetores, TV e visualização militar nítida)"
           >
-            Relevo
+            <Sun className="w-3.5 h-3.5" />
+            <span>Alto Contraste: {highContrast ? 'ON' : 'OFF'}</span>
           </button>
+
+          {/* BOTÃO: Rótulos Detalhados */}
           <button
-            onClick={() => setMapTheme('satellite')}
-            className={`px-2 py-0.5 rounded transition ${
-              mapTheme === 'satellite' ? 'bg-amber-400 text-slate-950 font-black' : 'bg-white/10 hover:bg-white/20'
+            onClick={() => setDetailedLabels(!detailedLabels)}
+            className={`px-2 py-1 rounded transition flex items-center gap-1 cursor-pointer hidden md:flex ${
+              detailedLabels
+                ? 'bg-blue-500 text-white font-black'
+                : 'bg-white/10 hover:bg-white/20 text-slate-200 border border-white/20'
             }`}
+            title="Mostrar número do batalhão e nome da cidade-sede diretamente no mapa"
           >
-            Satélite
+            <Tag className="w-3.5 h-3.5" />
+            <span>{detailedLabels ? 'Rótulos: Detalhados' : 'Rótulos: Compactos'}</span>
           </button>
+
+          {/* Theme Selector (Cartográfica / Relevo / Satélite / Vetor) */}
+          <div className="hidden lg:flex items-center gap-1 ml-1 pl-2 border-l border-white/20">
+            <span className="text-slate-300 text-[10.5px]">Camada:</span>
+            <button
+              onClick={() => setMapTheme('cartografica')}
+              className={`px-2 py-0.5 rounded transition cursor-pointer ${
+                mapTheme === 'cartografica' ? 'bg-amber-400 text-slate-950 font-black' : 'bg-white/10 hover:bg-white/20'
+              }`}
+              title="Mapa Cartográfico Oficial com cidades e rodovias"
+            >
+              Cartográfica
+            </button>
+            <button
+              onClick={() => setMapTheme('relevo')}
+              className={`px-2 py-0.5 rounded transition cursor-pointer ${
+                mapTheme === 'relevo' ? 'bg-amber-400 text-slate-950 font-black' : 'bg-white/10 hover:bg-white/20'
+              }`}
+              title="Mapa de Topografia e Relevo"
+            >
+              Relevo
+            </button>
+            <button
+              onClick={() => setMapTheme('satelite')}
+              className={`px-2 py-0.5 rounded transition cursor-pointer ${
+                mapTheme === 'satelite' ? 'bg-amber-400 text-slate-950 font-black' : 'bg-white/10 hover:bg-white/20'
+              }`}
+              title="Imagem de Satélite Híbrida de Alta Resolução"
+            >
+              Satélite
+            </button>
+            <button
+              onClick={() => setMapTheme('vetorial')}
+              className={`px-2 py-0.5 rounded transition cursor-pointer ${
+                mapTheme === 'vetorial' ? 'bg-amber-400 text-slate-950 font-black' : 'bg-white/10 hover:bg-white/20'
+              }`}
+              title="Vetor Puro com Fundo Institucional Limpo (ideal para apresentações e impressão)"
+            >
+              Vetor Puro
+            </button>
+          </div>
         </div>
       </div>
 
@@ -469,7 +863,23 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
                   <strong>Rodovias Federais</strong> (BR-135, BR-222, BR-316, BR-010)
                 </span>
               </div>
-              <div className="pt-1 border-t border-slate-200 text-[10px] text-slate-500">
+              <div className="flex items-center gap-2">
+                <span className="w-4 h-1 bg-[#002B55] rounded-xs shadow-2xs"></span>
+                <span>
+                  <strong>Divisa Estadual</strong> — Limite Territorial do Maranhão
+                </span>
+              </div>
+              <div className="pt-1.5 border-t border-slate-200 text-[10.5px] font-bold flex items-center gap-1">
+                <span className={showNeighborStates ? 'text-blue-700' : 'text-emerald-800'}>
+                  {showNeighborStates ? '🌐' : '✓'}
+                </span>
+                <span className={showNeighborStates ? 'text-blue-800' : 'text-emerald-800'}>
+                  {showNeighborStates
+                    ? 'Estados vizinhos visíveis para contexto geográfico'
+                    : 'Visualização Exclusiva do Maranhão (sem interferência externa)'}
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-500">
                 Divisão Policial Militar Oficial • Medida Provisória nº 542/2026
               </div>
             </div>
@@ -500,26 +910,29 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {allCPAIs.map((c) => (
-                    <tr
-                      key={c.id}
-                      onClick={() => onSelectCPAI(selectedCPAIId === c.id ? null : c.id)}
-                      className={`hover:bg-slate-100 cursor-pointer transition ${
-                        selectedCPAIId === c.id ? 'bg-amber-100 font-bold' : ''
-                      }`}
-                    >
-                      <td className="py-1 px-1 flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.cor }} />
-                        <span className="font-bold">{c.id}</span>
-                      </td>
-                      <td className="py-1 px-1 text-slate-600 truncate max-w-[200px]">
-                        {c.batalhoes.map((b) => b.numero).join(', ')}
-                      </td>
-                      <td className="py-1 px-1 text-center font-bold text-slate-800">
-                        {c.batalhoes.length}
-                      </td>
-                    </tr>
-                  ))}
+                  {allCPAIs.map((c) => {
+                    const rowColor = highContrast ? (HIGH_CONTRAST_PALETTE[c.id]?.fill || c.cor) : c.cor;
+                    return (
+                      <tr
+                        key={c.id}
+                        onClick={() => onSelectCPAI(selectedCPAIId === c.id ? null : c.id)}
+                        className={`hover:bg-slate-100 cursor-pointer transition ${
+                          selectedCPAIId === c.id ? 'bg-amber-100 font-bold' : ''
+                        }`}
+                      >
+                        <td className="py-1 px-1 flex items-center gap-1">
+                          <span className="w-2.5 h-2.5 rounded-full border border-slate-300 shadow-2xs" style={{ backgroundColor: rowColor }} />
+                          <span className="font-bold">{c.id}</span>
+                        </td>
+                        <td className="py-1 px-1 text-slate-600 truncate max-w-[200px]">
+                          {c.batalhoes.map((b) => b.numero).join(', ')}
+                        </td>
+                        <td className="py-1 px-1 text-center font-bold text-slate-800">
+                          {c.batalhoes.length}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
