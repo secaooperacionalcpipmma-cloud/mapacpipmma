@@ -1,0 +1,6 @@
+{
+  "name": "CPI Maranhão - Mapa Operacional",
+  "description": "Mapa interativo da estrutura territorial do Comando de Policiamento do Interior (CPI) da Polícia Militar do Maranhão, incluindo CPAI, Batalhões, Municípios, Força Tática (FT) e GOE conforme MP nº 542/2026.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
