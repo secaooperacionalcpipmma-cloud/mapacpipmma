@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { PanelLeftOpen, X } from 'lucide-react';
 import { CPAI_DATA, getCPIStats } from './data/cpiMaranhao';
 import { CPAI, Battalion, Municipality, FilterType } from './types/cpi';
 import { Header } from './components/Header';
@@ -23,7 +24,13 @@ export default function App() {
   const [selectedMunicipality, setSelectedMunicipality] = useState<Municipality | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1024;
+    }
+    return true;
+  });
+  const [showFooter, setShowFooter] = useState(true);
   const [showMunicipalities, setShowMunicipalities] = useState(true);
   const [showPolygons, setShowPolygons] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
@@ -249,6 +256,8 @@ export default function App() {
           onTogglePolygons={() => setShowPolygons((prev) => !prev)}
           isPosterView={isPosterView}
           onTogglePosterView={() => setIsPosterView((prev) => !prev)}
+          isSidebarOpen={isSidebarOpen}
+          onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
         />
       )}
 
@@ -293,6 +302,21 @@ export default function App() {
 
         {/* Map Container (Occupies 100% of viewport in Projection Mode or Poster Mode) */}
         <div className="flex-1 relative flex flex-col h-full w-full">
+          {/* Floating button to restore sidebar when hidden */}
+          {!isSidebarOpen && !isProjectionMode && !isPosterView && (
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="absolute top-3 left-3 z-30 flex items-center gap-2 px-3 py-2 rounded-md bg-[#002B55]/95 hover:bg-[#003870] text-white shadow-xl border border-blue-400/40 text-xs font-bold transition cursor-pointer backdrop-blur-xs"
+              title="Mostrar Barra Lateral (Estrutura CPI • PMMA)"
+            >
+              <PanelLeftOpen className="w-4 h-4 text-amber-300" />
+              <span>Mostrar Barra Lateral</span>
+              <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded text-blue-100 font-normal hidden sm:inline">
+                CPAIs & BPMs
+              </span>
+            </button>
+          )}
+
           {isPosterView ? (
             <CleanStaticMap
               allCPAIs={CPAI_DATA}
@@ -333,8 +357,8 @@ export default function App() {
         </div>
       </main>
 
-      {/* 5. Institutional Footer (Hidden in Projection Mode or Poster Mode) */}
-      {!isProjectionMode && !isPosterView && (
+      {/* 5. Institutional Footer (Hidden in Projection Mode or Poster Mode, or if dismissed) */}
+      {!isProjectionMode && !isPosterView && showFooter && (
         <footer
           id="cpi-footer"
           className="bg-[#002244] text-white/80 text-[10px] py-1.5 px-4 border-t border-[#001830] flex items-center justify-between flex-shrink-0 font-medium tracking-wider uppercase"
@@ -344,10 +368,33 @@ export default function App() {
             <BrasaoPMMA className="w-4 h-4" />
             <span>Comando do Policiamento do Interior (CPI) — Polícia Militar do Maranhão</span>
           </div>
-          <div className="text-amber-300/90 font-bold hidden sm:block">
-            Medida Provisória nº 542/2026
+          <div className="flex items-center gap-3">
+            <div className="text-amber-300/90 font-bold hidden sm:block">
+              Medida Provisória nº 542/2026
+            </div>
+            <button
+              onClick={() => setShowFooter(false)}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white/90 hover:text-white text-[9.5px] transition cursor-pointer font-bold normal-case border border-white/10"
+              title="Ocultar barra inferior institucional"
+            >
+              <X className="w-3 h-3 text-amber-300" />
+              <span>Ocultar Barra</span>
+            </button>
           </div>
         </footer>
+      )}
+
+      {/* Restore button if footer is hidden */}
+      {!isProjectionMode && !isPosterView && !showFooter && (
+        <div className="fixed bottom-2 right-2 z-30">
+          <button
+            onClick={() => setShowFooter(true)}
+            className="px-2.5 py-1 rounded bg-[#002244]/90 hover:bg-[#002244] text-white/90 hover:text-white border border-white/20 text-[10.5px] font-bold shadow-lg transition cursor-pointer backdrop-blur-xs flex items-center gap-1.5"
+            title="Mostrar barra inferior institucional"
+          >
+            <span>Mostrar Rodapé</span>
+          </button>
+        </div>
       )}
 
       {/* 6. Modals */}

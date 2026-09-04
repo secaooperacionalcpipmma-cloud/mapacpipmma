@@ -10,6 +10,8 @@ import {
   MapPin,
   Monitor,
   Building2,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { CPAI, Battalion } from '../types/cpi';
 import { BrasaoPMMA, BrasaoCPI } from './CrestLogos';
@@ -142,10 +144,25 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               id="sidebar-toggle-btn"
               onClick={onToggleSidebar}
-              className="lg:hidden p-2 rounded bg-white/10 hover:bg-white/20 text-white focus:outline-none focus:ring-1 focus:ring-blue-400 transition"
-              aria-label="Alternar menu lateral"
+              className={`px-2.5 py-1.5 rounded transition cursor-pointer flex items-center gap-1.5 text-xs font-bold shrink-0 ${
+                isSidebarOpen
+                  ? 'bg-white/15 text-white hover:bg-white/25 border border-white/20'
+                  : 'bg-amber-400 text-slate-950 font-black hover:bg-amber-300 shadow-sm border border-amber-300'
+              }`}
+              title={isSidebarOpen ? "Ocultar Barra Lateral (Estrutura CPI)" : "Mostrar Barra Lateral (Estrutura CPI)"}
+              aria-label={isSidebarOpen ? "Ocultar Barra Lateral" : "Mostrar Barra Lateral"}
             >
-              <Menu className="w-5 h-5" />
+              {isSidebarOpen ? (
+                <>
+                  <PanelLeftClose className="w-4 h-4 text-amber-300" />
+                  <span className="hidden sm:inline">Ocultar Barra</span>
+                </>
+              ) : (
+                <>
+                  <PanelLeftOpen className="w-4 h-4 text-slate-950" />
+                  <span className="hidden sm:inline">Mostrar Barra</span>
+                </>
+              )}
             </button>
 
             {/* Official Crests (PMMA & CPI) */}

@@ -10,6 +10,7 @@ import {
   Building2,
   X,
   ExternalLink,
+  PanelLeftClose,
 } from 'lucide-react';
 import { CPAI, Battalion, FilterType } from '../types/cpi';
 import { BrasaoCPI, BrasaoPMMA } from './CrestLogos';
@@ -47,6 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     'CPAI-8': false,
     'CPAI-9': true, // Expanded by default to highlight MP 542/2026!
   });
+  const [showStatusBox, setShowStatusBox] = useState(true);
 
   const toggleCPAIExpand = (cpaiId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -68,8 +70,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       <aside
         id="cpi-structure-sidebar"
-        className={`fixed lg:static top-0 bottom-0 left-0 z-40 w-80 sm:w-96 bg-white border-r border-slate-200 flex flex-col shadow-xl lg:shadow-none transform transition-transform duration-300 ease-in-out shrink-0 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        className={`fixed lg:static top-0 bottom-0 left-0 z-40 w-80 sm:w-96 bg-white border-r border-slate-200 flex flex-col shadow-xl lg:shadow-none transition-all duration-300 ease-in-out shrink-0 ${
+          isOpen ? 'translate-x-0' : '-translate-x-full lg:hidden'
         }`}
       >
         {/* Sidebar Header */}
@@ -91,10 +93,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <button
             onClick={onClose}
-            className="lg:hidden p-1.5 rounded bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition cursor-pointer"
-            aria-label="Fechar menu"
+            className="flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white transition cursor-pointer text-xs font-bold border border-white/20 shadow-xs"
+            title="Ocultar Barra Lateral (Estrutura CPI)"
+            aria-label="Ocultar Barra Lateral"
           >
-            <X className="w-4 h-4" />
+            <PanelLeftClose className="w-4 h-4 text-amber-300" />
+            <span className="text-[11px]">Ocultar</span>
           </button>
         </div>
 
@@ -323,17 +327,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-3 bg-[#001D3D] text-white border-t border-white/10 text-center">
-          <div className="flex items-center justify-center gap-1.5 text-[10px] text-emerald-400 font-bold uppercase tracking-wider mb-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            Base Integrada Atualizada
+        {showStatusBox && (
+          <div className="p-3 bg-[#001D3D] text-white border-t border-white/10 text-center relative group">
+            <button
+              onClick={() => setShowStatusBox(false)}
+              className="absolute top-1.5 right-1.5 p-1 rounded text-white/50 hover:text-white hover:bg-white/15 transition cursor-pointer"
+              title="Ocultar este aviso"
+              aria-label="Ocultar aviso de base"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+            <div className="flex items-center justify-center gap-1.5 text-[10px] text-emerald-400 font-bold uppercase tracking-wider mb-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              Base Integrada Atualizada
+            </div>
+            <p className="text-[9px] text-white/60 leading-snug">
+              Polícia Militar do Maranhão — CPI
+              <br />
+              Conforme <strong>MP nº 542/2026</strong> &amp; <strong>FT/GOE Oficial</strong>
+            </p>
           </div>
-          <p className="text-[9px] text-white/60 leading-snug">
-            Polícia Militar do Maranhão — CPI
-            <br />
-            Conforme <strong>MP nº 542/2026</strong> &amp; <strong>FT/GOE Oficial</strong>
-          </p>
-        </div>
+        )}
       </aside>
     </>
   );

@@ -8,6 +8,8 @@ import {
   Layers,
   X,
   Map,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { CPAI, FilterType } from '../types/cpi';
 
@@ -23,6 +25,8 @@ interface FilterBarProps {
   onTogglePolygons: () => void;
   isPosterView?: boolean;
   onTogglePosterView?: () => void;
+  isSidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
@@ -37,6 +41,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onTogglePolygons,
   isPosterView,
   onTogglePosterView,
+  isSidebarOpen,
+  onToggleSidebar,
 }) => {
   return (
     <div
@@ -45,6 +51,30 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     >
       {/* CPAI Quick Selection Pills */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 max-w-full">
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className={`px-2.5 py-1 rounded font-bold text-xs border transition flex items-center gap-1.5 cursor-pointer mr-1 flex-shrink-0 ${
+              isSidebarOpen
+                ? 'bg-[#002B55] text-white border-[#002B55] shadow-xs'
+                : 'bg-amber-400 text-slate-950 border-amber-300 font-black hover:bg-amber-300 shadow-xs'
+            }`}
+            title={isSidebarOpen ? 'Ocultar Barra Lateral (Estrutura CPI)' : 'Mostrar Barra Lateral (Estrutura CPI)'}
+          >
+            {isSidebarOpen ? (
+              <>
+                <PanelLeftClose className="w-3.5 h-3.5 text-amber-300" />
+                <span>Ocultar Barra</span>
+              </>
+            ) : (
+              <>
+                <PanelLeftOpen className="w-3.5 h-3.5 text-slate-950" />
+                <span>Mostrar Barra</span>
+              </>
+            )}
+          </button>
+        )}
+
         <span className="text-[10px] text-slate-500 uppercase font-bold tracking-widest flex items-center gap-1 mr-1 flex-shrink-0">
           <Shield className="w-3.5 h-3.5 text-[#003366]" />
           CPAI:
