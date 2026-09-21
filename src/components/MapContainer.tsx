@@ -16,6 +16,9 @@ import {
 import { Maximize2, Minimize2, RotateCcw, Monitor, Layers } from 'lucide-react';
 import { MapTileTheme } from './ProjectionHUD';
 import { OfficialPosterOverlay } from './OfficialPosterOverlay';
+import { CityJurisdictionInfo } from '../utils/citySearchUtils';
+import { CityJurisdictionCard } from './CityJurisdictionCard';
+import { CitySearchBar } from './CitySearchBar';
 
 interface MapContainerProps {
   allCPAIs: CPAI[];
@@ -28,6 +31,11 @@ interface MapContainerProps {
   mapTheme?: MapTileTheme;
   isProjectionMode?: boolean;
   isPosterView?: boolean;
+  selectedCity?: CityJurisdictionInfo | null;
+  onClearCity?: () => void;
+  onSelectCity?: (city: CityJurisdictionInfo) => void;
+  onOpenBattalionDetails?: (bat: Battalion, cpai: CPAI) => void;
+  onOpenSubunidadesModal?: () => void;
   onTogglePosterView?: () => void;
   onEnterProjection?: () => void;
   onSelectCPAI: (id: string | null) => void;
@@ -88,6 +96,11 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   mapTheme = 'voyager',
   isProjectionMode = false,
   isPosterView = false,
+  selectedCity = null,
+  onClearCity,
+  onSelectCity,
+  onOpenBattalionDetails,
+  onOpenSubunidadesModal,
   onTogglePosterView,
   onEnterProjection,
   onSelectCPAI,
@@ -106,6 +119,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   const neighborLabelsLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const battalionsLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const municipalitiesLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const cityHighlightLayerGroupRef = useRef<L.LayerGroup | null>(null);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -162,6 +176,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
     cpaiLabelsLayerGroupRef.current = L.layerGroup().addTo(map);
     municipalitiesLayerGroupRef.current = L.layerGroup().addTo(map);
     battalionsLayerGroupRef.current = L.layerGroup().addTo(map);
+    cityHighlightLayerGroupRef.current = L.layerGroup().addTo(map);
 
     mapInstanceRef.current = map;
 
@@ -189,6 +204,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       cpaiLabelsLayerGroupRef.current = null;
       battalionsLayerGroupRef.current = null;
       municipalitiesLayerGroupRef.current = null;
+      cityHighlightLayerGroupRef.current = null;
     };
   }, []);
 
@@ -553,6 +569,105 @@ export const MapContainer: React.FC<MapContainerProps> = ({
     }
   }, [selectedCPAIId, selectedBattalionId, activeFilter, allCPAIs]);
 
+  // Handle City Highlighting and FlyTo animation
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const highlightGroup = cityHighlightLayerGroupRef.current;
+    if (!map || !highlightGroup) return;
+
+    highlightGroup.clearLayers();
+
+    if (!selectedCity) return;
+
+    try {
+      // 1. Radar pulse & Pin marker
+      const markerHtml = `
+        <div class="group relative cursor-pointer -translate-x-1/2 -translate-y-1/2 select-none">
+          <!-- Outer Radar Pulse Waves -->
+          <div class="absolute -inset-4 rounded-full border-2 border-amber-400 radar-pulse-ring pointer-events-none" style="background-color: rgba(251, 191, 36, 0.25);"></div>
+          <div class="absolute -inset-8 rounded-full border border-amber-300/40 radar-pulse-ring pointer-events-none" style="animation-delay: 0.6s;"></div>
+
+          <!-- Tactical Badge -->
+          <div class="relative z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-lg shadow-2xl border-2 border-white text-xs font-black text-white whitespace-nowrap"
+               style="background: linear-gradient(135deg, ${selectedCity.cpaiCor}, #001D3D); box-shadow: 0 0 25px ${selectedCity.cpaiCor}, 0 6px 14px rgba(0,0,0,0.7);">
+            <span class="text-amber-300 text-sm drop-shadow">📍</span>
+            <span class="tracking-wide">${selectedCity.cidade}</span>
+            <span class="ml-1 bg-black/45 text-amber-300 px-1.5 py-0.5 rounded text-[9.5px] font-black border border-white/20">
+              ${selectedCity.cpaiId}
+            </span>
+          </div>
+
+          <!-- Bottom arrow indicator -->
+          <div class="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white mx-auto"></div>
+        </div>
+      `;
+
+      const customIcon = L.divIcon({
+        className: 'city-highlight-icon',
+        html: markerHtml,
+        iconSize: [140, 52],
+        iconAnchor: [70, 26],
+      });
+
+      const marker = L.marker([selectedCity.lat, selectedCity.lng], {
+        icon: customIcon,
+        zIndexOffset: 3000,
+      });
+
+      const popupHtml = `
+        <div class="p-3.5 bg-[#001D3D] text-white min-w-[240px] max-w-[280px] rounded-lg">
+          <div class="flex items-center justify-between gap-2 mb-1.5">
+            <span class="text-[9.5px] uppercase font-black px-1.5 py-0.5 rounded text-white" style="background-color: ${selectedCity.cpaiCor}">
+              ${selectedCity.cpaiId}
+            </span>
+            <span class="text-[9px] font-bold text-amber-300 uppercase">
+              ${selectedCity.subunidadeTipo}
+            </span>
+          </div>
+          <div class="text-sm font-black text-white tracking-tight">${selectedCity.cidade}</div>
+          <div class="mt-2 pt-2 border-t border-white/15 space-y-1.5 text-xs text-white/90">
+            <div>
+              <span class="text-[10px] text-amber-300 uppercase font-bold block">Comando de Área:</span>
+              <span class="font-semibold">${selectedCity.cpaiNome}</span>
+            </div>
+            <div>
+              <span class="text-[10px] text-blue-300 uppercase font-bold block">Batalhão Responsável:</span>
+              <span class="font-bold text-white">${selectedCity.batalhaoNumero}</span>
+              <span class="text-[10px] text-white/70 block">Sede: ${selectedCity.batalhaoSede}</span>
+            </div>
+            <div>
+              <span class="text-[10px] text-emerald-300 uppercase font-bold block">Companhia ou Pelotão:</span>
+              <span class="font-medium text-amber-100">${selectedCity.subunidade}</span>
+            </div>
+          </div>
+        </div>
+      `;
+
+      marker.bindPopup(popupHtml, {
+        closeButton: true,
+        autoPan: true,
+        offset: [0, -22],
+      });
+
+      highlightGroup.addLayer(marker);
+
+      map.stop();
+      map.flyTo([selectedCity.lat, selectedCity.lng], 11, {
+        duration: 1.2,
+      });
+
+      const popupTimer = setTimeout(() => {
+        if (mapInstanceRef.current && highlightGroup.hasLayer(marker)) {
+          marker.openPopup();
+        }
+      }, 1300);
+
+      return () => clearTimeout(popupTimer);
+    } catch (err) {
+      console.warn('Error highlighting city:', err);
+    }
+  }, [selectedCity]);
+
   const handleResetToMaranhao = () => {
     const map = mapInstanceRef.current;
     if (map) {
@@ -564,6 +679,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
         map.setView(MARANHAO_CENTER, MARANHAO_DEFAULT_ZOOM);
       }
       onSelectCPAI(null);
+      if (onClearCity) onClearCity();
     }
   };
 
@@ -598,8 +714,42 @@ export const MapContainer: React.FC<MapContainerProps> = ({
         />
       )}
 
+      {/* Dedicated City Search Bar positioned on top-center of Map */}
+      {!isPosterView && onSelectCity && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 w-[94%] max-w-sm sm:max-w-md">
+          <CitySearchBar
+            onSelectCity={onSelectCity}
+            selectedCity={selectedCity}
+            placeholder="🔍 Digite a cidade (ex: Bacabal, Imperatriz, Caxias)..."
+          />
+        </div>
+      )}
+
+      {/* City Jurisdiction Floating Tactical Card */}
+      {selectedCity && !isPosterView && (
+        <CityJurisdictionCard
+          city={selectedCity}
+          onClose={() => onClearCity?.()}
+          onOpenBattalionDetails={() => {
+            const cpai = allCPAIs.find((c) => c.id === selectedCity.cpaiId);
+            const bat = cpai?.batalhoes.find((b) => b.id === selectedCity.batalhaoId);
+            if (bat && cpai) {
+              onOpenBattalionDetails?.(bat, cpai);
+            }
+          }}
+          onOpenAllSubunidades={() => onOpenSubunidadesModal?.()}
+          onRecenter={() => {
+            const map = mapInstanceRef.current;
+            if (map && selectedCity) {
+              map.stop();
+              map.flyTo([selectedCity.lat, selectedCity.lng], 12, { duration: 0.8 });
+            }
+          }}
+        />
+      )}
+
       {/* Floating Isolated CPAI Indicator */}
-      {selectedCPAIId && !isPosterView && (
+      {selectedCPAIId && !selectedCity && !isPosterView && (
         <div className="absolute top-4 left-4 z-20 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-lg shadow-xl border-2 border-slate-800 flex items-center gap-3 select-none">
           <div
             className="w-3.5 h-3.5 rounded-full shadow-xs flex-shrink-0"

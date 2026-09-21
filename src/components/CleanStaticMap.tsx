@@ -29,6 +29,8 @@ import {
   getMaranhaoMaskPolygon,
   NEIGHBOR_LABELS,
 } from '../utils/geoUtils';
+import { CityJurisdictionInfo } from '../utils/citySearchUtils';
+import { CitySearchBar } from './CitySearchBar';
 
 interface CleanStaticMapProps {
   allCPAIs: CPAI[];
@@ -37,6 +39,7 @@ interface CleanStaticMapProps {
   onSelectBattalion: (bat: Battalion, cpai: CPAI) => void;
   onSwitchToInteractive: () => void;
   onOpenSubunidades?: () => void;
+  onSelectCity?: (city: CityJurisdictionInfo) => void;
 }
 
 // High-contrast, rich official military briefing palette for each CPAI
@@ -75,6 +78,7 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
   onSelectBattalion,
   onSwitchToInteractive,
   onOpenSubunidades,
+  onSelectCity,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -827,6 +831,16 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
                 PDF
               </span>
             </button>
+          </div>
+        )}
+
+        {/* Dedicated City Search Bar positioned on top-center of CleanStaticMap */}
+        {onSelectCity && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 w-[94%] max-w-sm sm:max-w-md">
+            <CitySearchBar
+              onSelectCity={onSelectCity}
+              placeholder="🔍 Encontrar cidade (ex: Bacabal, Pinheiro, Balsas)..."
+            />
           </div>
         )}
 

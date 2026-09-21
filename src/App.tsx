@@ -16,12 +16,14 @@ import { BrasaoCPI, BrasaoPMMA } from './components/CrestLogos';
 import { CleanStaticMap } from './components/CleanStaticMap';
 import { SubunidadesModal } from './components/SubunidadesModal';
 import { Subunidade } from './data/subunidadesData';
+import { CityJurisdictionInfo } from './utils/citySearchUtils';
 
 export default function App() {
   const [selectedCPAIId, setSelectedCPAIId] = useState<string | null>(null);
   const [selectedBattalionId, setSelectedBattalionId] = useState<string | null>(null);
   const [selectedBattalion, setSelectedBattalion] = useState<Battalion | null>(null);
   const [selectedMunicipality, setSelectedMunicipality] = useState<Municipality | null>(null);
+  const [selectedCity, setSelectedCity] = useState<CityJurisdictionInfo | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
@@ -89,6 +91,33 @@ export default function App() {
     setSelectedBattalion(bat);
     setSelectedMunicipality(mun);
     setIsDetailOpen(true);
+  };
+
+  const handleSelectCity = (city: CityJurisdictionInfo) => {
+    setSelectedCity(city);
+    // Switch to interactive map to animate flyTo and display tactical marker
+    if (isPosterView) {
+      setIsPosterView(false);
+    }
+    setSelectedCPAIId(city.cpaiId);
+    const cpai = CPAI_DATA.find((c) => c.id === city.cpaiId);
+    if (cpai) {
+      const bat = cpai.batalhoes.find((b) => b.id === city.batalhaoId);
+      if (bat) {
+        setSelectedBattalionId(bat.id);
+        setSelectedBattalion(bat);
+        const mun = bat.municipios.find(
+          (m) => m.nome.toLowerCase() === city.cidade.toLowerCase()
+        );
+        if (mun) {
+          setSelectedMunicipality(mun);
+        }
+      }
+    }
+  };
+
+  const handleClearCity = () => {
+    setSelectedCity(null);
   };
 
   const handleSearchResultSelect = (
@@ -191,6 +220,7 @@ export default function App() {
     setSelectedBattalionId(null);
     setSelectedBattalion(null);
     setSelectedMunicipality(null);
+    setSelectedCity(null);
     setActiveFilter('all');
     setSearchQuery('');
   };
@@ -221,6 +251,7 @@ export default function App() {
           onTogglePosterView={() => setIsPosterView((prev) => !prev)}
           isSidebarOpen={isSidebarOpen}
           onSelectSearchResult={handleSearchResultSelect}
+          onSelectCity={handleSelectCity}
           allCPAIs={CPAI_DATA}
           onOpenSubunidades={() => setIsSubunidadesOpen(true)}
           onFilterCOSAR={handleSelectCOSAR}
@@ -325,6 +356,7 @@ export default function App() {
               onSelectBattalion={handleSelectBattalion}
               onSwitchToInteractive={() => setIsPosterView(false)}
               onOpenSubunidades={() => setIsSubunidadesOpen(true)}
+              onSelectCity={handleSelectCity}
             />
           ) : (
             <MapContainer
@@ -338,6 +370,16 @@ export default function App() {
               mapTheme={mapTheme}
               isProjectionMode={isProjectionMode}
               isPosterView={isPosterView}
+              selectedCity={selectedCity}
+              onClearCity={handleClearCity}
+              onSelectCity={handleSelectCity}
+              onOpenBattalionDetails={(bat, cpai) => {
+                setSelectedCPAIId(cpai.id);
+                setSelectedBattalionId(bat.id);
+                setSelectedBattalion(bat);
+                setIsDetailOpen(true);
+              }}
+              onOpenSubunidadesModal={() => setIsSubunidadesOpen(true)}
               onTogglePosterView={() => setIsPosterView((prev) => !prev)}
               onEnterProjection={() => setIsProjectionMode(true)}
               onSelectCPAI={handleSelectCPAI}

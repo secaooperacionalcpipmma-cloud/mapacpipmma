@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { CPAI, Battalion } from '../types/cpi';
 import { BrasaoPMMA, BrasaoCPI } from './CrestLogos';
+import { CityJurisdictionInfo, searchCities } from '../utils/citySearchUtils';
 
 interface HeaderProps {
   searchQuery: string;
@@ -27,7 +28,8 @@ interface HeaderProps {
   isPosterView?: boolean;
   onTogglePosterView?: () => void;
   isSidebarOpen: boolean;
-  onSelectSearchResult: (type: 'cpai' | 'bpm' | 'municipio', id: string, extra?: string) => void;
+  onSelectSearchResult: (type: 'cpai' | 'bpm' | 'municipio' | 'cidade', id: string, extra?: string) => void;
+  onSelectCity?: (city: CityJurisdictionInfo) => void;
   allCPAIs: CPAI[];
   onOpenSubunidades?: () => void;
   onFilterCOSAR?: () => void;
@@ -48,6 +50,7 @@ export const Header: React.FC<HeaderProps> = ({
   allCPAIs,
   onOpenSubunidades,
   onFilterCOSAR,
+  onSelectCity,
 }) => {
   // Search autocompletion suggestions
   const [showSuggestions, setShowSuggestions] = React.useState(false);
@@ -57,13 +60,27 @@ export const Header: React.FC<HeaderProps> = ({
     if (!q || q.length < 2) return [];
 
     const results: Array<{
-      type: 'cpai' | 'bpm' | 'municipio';
+      type: 'cpai' | 'bpm' | 'municipio' | 'cidade';
       title: string;
       subtitle: string;
       id: string;
       extra?: string;
       badge?: string;
+      cityData?: CityJurisdictionInfo;
     }> = [];
+
+    // 1. Search Cities with full CPAI, Batalhão & Subunidade jurisdiction
+    const cityMatches = searchCities(q, 5);
+    cityMatches.forEach((c) => {
+      results.push({
+        type: 'cidade',
+        title: `📍 ${c.cidade}`,
+        subtitle: `${c.cpaiId} • ${c.batalhaoNumero} • ${c.subunidade}`,
+        id: c.cidade,
+        badge: c.cpaiId,
+        cityData: c,
+      });
+    });
 
     allCPAIs.forEach((cpai) => {
       if (
@@ -113,23 +130,10 @@ export const Header: React.FC<HeaderProps> = ({
             badge: bat.cosar ? 'COSAR + FT' : bat.ft && bat.goe ? 'FT + GOE' : bat.ft ? 'FT' : bat.goe ? 'GOE' : undefined,
           });
         }
-
-        bat.municipios.forEach((m) => {
-          if (m.nome.toLowerCase().includes(q)) {
-            results.push({
-              type: 'municipio',
-              title: m.nome,
-              subtitle: `Unidade: ${bat.numero} (${cpai.id})`,
-              id: bat.id,
-              extra: m.nome,
-              badge: m.hasCosar ? 'Base COSAR' : m.isSede ? 'Sede' : undefined,
-            });
-          }
-        });
       });
     });
 
-    return results.slice(0, 8);
+    return results.slice(0, 10);
   }, [searchQuery, allCPAIs]);
 
   return (
@@ -312,7 +316,12 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   key={`${res.type}-${res.id}-${idx}`}
                   onClick={() => {
-                    onSelectSearchResult(res.type, res.id, res.extra);
+                    if (res.type === 'cidade' && res.cityData && onSelectCity) {
+                      onSelectCity(res.cityData);
+                      onSearchChange('');
+                    } else {
+                      onSelectSearchResult(res.type, res.id, res.extra);
+                    }
                     setShowSuggestions(false);
                   }}
                   className="w-full text-left px-4 py-2.5 hover:bg-white/10 flex items-center justify-between gap-2 text-sm transition"
@@ -321,6 +330,8 @@ export const Header: React.FC<HeaderProps> = ({
                     <span className="p-1.5 rounded bg-white/10 text-white/90">
                       {res.type === 'cpai' ? (
                         <Shield className="w-3.5 h-3.5 text-blue-300" />
+                      ) : res.type === 'cidade' ? (
+                        <MapPin className="w-3.5 h-3.5 text-amber-300" />
                       ) : (
                         <MapPin className="w-3.5 h-3.5 text-emerald-300" />
                       )}
