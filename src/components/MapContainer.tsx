@@ -19,6 +19,7 @@ import { OfficialPosterOverlay } from './OfficialPosterOverlay';
 import { CityJurisdictionInfo } from '../utils/citySearchUtils';
 import { CityJurisdictionCard } from './CityJurisdictionCard';
 import { CitySearchBar } from './CitySearchBar';
+import { TacticalSearchBar } from './TacticalSearchBar';
 
 interface MapContainerProps {
   allCPAIs: CPAI[];
@@ -714,13 +715,19 @@ export const MapContainer: React.FC<MapContainerProps> = ({
         />
       )}
 
-      {/* Dedicated City Search Bar positioned on top-center of Map */}
-      {!isPosterView && onSelectCity && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 w-[94%] max-w-sm sm:max-w-md">
-          <CitySearchBar
+      {/* Dedicated Tactical Search Bar positioned on top-center of Map */}
+      {!isPosterView && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 w-[94%] max-w-sm sm:max-w-xl">
+          <TacticalSearchBar
+            allCPAIs={allCPAIs}
+            onSelectBattalion={(bat, cpai) => {
+              onSelectBattalion(bat, cpai);
+              if (onOpenBattalionDetails) onOpenBattalionDetails(bat, cpai);
+            }}
             onSelectCity={onSelectCity}
-            selectedCity={selectedCity}
-            placeholder="🔍 Digite a cidade (ex: Bacabal, Imperatriz, Caxias)..."
+            onSelectCPAI={onSelectCPAI}
+            onOpenSubunidades={onOpenSubunidadesModal}
+            placeholder="🔍 Localizar Batalhão (ex: 15º BPM), Cidade (ex: Bacabal, Pinheiro) ou CPAI..."
           />
         </div>
       )}

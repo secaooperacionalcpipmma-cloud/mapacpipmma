@@ -31,6 +31,9 @@ import {
 } from '../utils/geoUtils';
 import { CityJurisdictionInfo } from '../utils/citySearchUtils';
 import { CitySearchBar } from './CitySearchBar';
+import { TacticalSearchBar } from './TacticalSearchBar';
+import { BattalionJurisdictionCard } from './BattalionJurisdictionCard';
+import { CityJurisdictionCard } from './CityJurisdictionCard';
 
 interface CleanStaticMapProps {
   allCPAIs: CPAI[];
@@ -88,6 +91,7 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const highwaysLayerRef = useRef<L.LayerGroup | null>(null);
   const neighborsLayerRef = useRef<L.LayerGroup | null>(null);
+  const highlightLayerRef = useRef<L.LayerGroup | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
 
   const [mapTheme, setMapTheme] = useState<'cartografica' | 'relevo' | 'satelite' | 'vetorial'>('cartografica');
@@ -96,6 +100,8 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
   const [detailedLabels, setDetailedLabels] = useState(false);
   const [isTableCollapsed, setIsTableCollapsed] = useState(false);
   const [isLegendCollapsed, setIsLegendCollapsed] = useState(false);
+  const [activeBattalion, setActiveBattalion] = useState<{ bat: Battalion; cpai: CPAI } | null>(null);
+  const [activeCity, setActiveCity] = useState<CityJurisdictionInfo | null>(null);
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -135,6 +141,7 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
     neighborsLayerRef.current = L.layerGroup().addTo(map);
     cpaiLabelsLayerRef.current = L.layerGroup().addTo(map);
     markersLayerRef.current = L.layerGroup().addTo(map);
+    highlightLayerRef.current = L.layerGroup().addTo(map);
 
     // Initial fit strictly on Maranhão
     const bounds = getMaranhaoBounds();
@@ -532,7 +539,7 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
 
         const marker = L.marker([bat.sedeLat, bat.sedeLng], { icon });
         marker.on('click', () => {
-          onSelectBattalion(bat, cpai);
+          handleLocateBattalion(bat, cpai);
         });
 
         marker.bindTooltip(
@@ -559,8 +566,110 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
     }
   }, [allCPAIs, selectedCPAIId, highContrast, detailedLabels, onSelectCPAI, onSelectBattalion]);
 
+  const handleLocateBattalion = (bat: Battalion, cpai: CPAI) => {
+    setActiveBattalion({ bat, cpai });
+    setActiveCity(null);
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.flyTo([bat.sedeLat, bat.sedeLng], 11, {
+        animate: true,
+        duration: 1.2,
+      });
+    }
+  };
+
+  const handleLocateCity = (city: CityJurisdictionInfo) => {
+    setActiveCity(city);
+    setActiveBattalion(null);
+    if (onSelectCity) onSelectCity(city);
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.flyTo([city.lat, city.lng], 11, {
+        animate: true,
+        duration: 1.2,
+      });
+    }
+  };
+
+  // Highlight and Radar Pulse for Active Battalion or City
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const hGroup = highlightLayerRef.current;
+    if (!map || !hGroup) return;
+
+    hGroup.clearLayers();
+
+    if (activeBattalion) {
+      const { bat, cpai } = activeBattalion;
+      const isCosar = Boolean(bat.cosar);
+
+      const markerHtml = `
+        <div class="relative cursor-pointer select-none" style="transform: translate(-50%, -50%);">
+          <div class="absolute -inset-4 rounded-full border-2 border-amber-400 radar-pulse-ring pointer-events-none" style="background-color: rgba(251, 191, 36, 0.3);"></div>
+          <div class="absolute -inset-8 rounded-full border border-amber-300/40 radar-pulse-ring pointer-events-none" style="animation-delay: 0.6s;"></div>
+
+          <div class="relative z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-lg shadow-2xl border-2 border-white text-xs font-black text-white whitespace-nowrap"
+               style="background: linear-gradient(135deg, ${cpai.cor}, #001f3f); box-shadow: 0 0 25px ${cpai.cor}, 0 6px 16px rgba(0,0,0,0.8);">
+            <span class="text-amber-300 text-sm drop-shadow">${isCosar ? '🌲' : '🛡️'}</span>
+            <span class="tracking-wide">${bat.numero} (${bat.sede})</span>
+            <span class="ml-1 bg-black/50 text-amber-300 px-1.5 py-0.5 rounded text-[9.5px] font-black border border-white/20">
+              ${cpai.id}
+            </span>
+          </div>
+
+          <div class="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white mx-auto"></div>
+        </div>
+      `;
+
+      const customIcon = L.divIcon({
+        className: 'bat-highlight-icon',
+        html: markerHtml,
+        iconSize: [0, 0],
+      });
+
+      const marker = L.marker([bat.sedeLat, bat.sedeLng], {
+        icon: customIcon,
+        zIndexOffset: 3500,
+      });
+
+      hGroup.addLayer(marker);
+    } else if (activeCity) {
+      const city = activeCity;
+      const markerHtml = `
+        <div class="relative cursor-pointer select-none" style="transform: translate(-50%, -50%);">
+          <div class="absolute -inset-4 rounded-full border-2 border-amber-400 radar-pulse-ring pointer-events-none" style="background-color: rgba(251, 191, 36, 0.3);"></div>
+          <div class="absolute -inset-8 rounded-full border border-amber-300/40 radar-pulse-ring pointer-events-none" style="animation-delay: 0.6s;"></div>
+
+          <div class="relative z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-lg shadow-2xl border-2 border-white text-xs font-black text-white whitespace-nowrap"
+               style="background: linear-gradient(135deg, ${city.cpaiCor}, #001f3f); box-shadow: 0 0 25px ${city.cpaiCor}, 0 6px 16px rgba(0,0,0,0.8);">
+            <span class="text-amber-300 text-sm drop-shadow">📍</span>
+            <span class="tracking-wide">${city.cidade}</span>
+            <span class="ml-1 bg-black/50 text-amber-300 px-1.5 py-0.5 rounded text-[9.5px] font-black border border-white/20">
+              ${city.cpaiId} • ${city.batalhaoNumero}
+            </span>
+          </div>
+
+          <div class="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white mx-auto"></div>
+        </div>
+      `;
+
+      const customIcon = L.divIcon({
+        className: 'city-highlight-icon',
+        html: markerHtml,
+        iconSize: [0, 0],
+      });
+
+      const marker = L.marker([city.lat, city.lng], {
+        icon: customIcon,
+        zIndexOffset: 3500,
+      });
+
+      hGroup.addLayer(marker);
+    }
+  }, [activeBattalion, activeCity]);
+
   const handleResetView = () => {
     onSelectCPAI(null);
+    setActiveBattalion(null);
+    setActiveCity(null);
     if (mapInstanceRef.current) {
       mapInstanceRef.current.fitBounds(getMaranhaoBounds(), {
         padding: [20, 20],
@@ -789,7 +898,22 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
         </div>
       </div>
 
-      {/* 3. REALISTIC LEAFLET MAP CANVAS */}
+      {/* 3. DEDICATED TACTICAL SEARCH & BATTALION LOCATION BAR */}
+      <div
+        id="battalion-search-space-bar"
+        className="bg-[#001733] text-white px-3 sm:px-6 py-2 border-b-2 border-amber-400/50 z-20 shrink-0 shadow-md"
+      >
+        <TacticalSearchBar
+          allCPAIs={allCPAIs}
+          onSelectBattalion={handleLocateBattalion}
+          onSelectCity={handleLocateCity}
+          onSelectCPAI={onSelectCPAI}
+          onOpenSubunidades={onOpenSubunidades}
+          placeholder="🔍 Localizar Batalhão (ex: 15º BPM), Sede, Cidade (ex: Bacabal, Pinheiro) ou Comando de Área (CPAI)..."
+        />
+      </div>
+
+      {/* 4. REALISTIC LEAFLET MAP CANVAS */}
       <div className="flex-1 relative w-full h-full overflow-hidden bg-slate-100">
         <div ref={mapContainerRef} className="w-full h-full z-10" />
 
@@ -818,30 +942,33 @@ export const CleanStaticMap: React.FC<CleanStaticMapProps> = ({
           </button>
         </div>
 
-        {/* Floating Quick Action: Procurar Companhias e Pelotões */}
-        {onOpenSubunidades && (
-          <div className="absolute top-4 left-4 z-20">
-            <button
-              onClick={onOpenSubunidades}
-              className="px-3.5 py-2 rounded-lg bg-[#002D5C] hover:bg-[#003d7a] text-white font-black text-xs shadow-xl border-2 border-amber-400 flex items-center gap-2 cursor-pointer transition"
-            >
-              <Building2 className="w-4 h-4 text-amber-400" />
-              <span>Onde Ficam Cias e Pelotões?</span>
-              <span className="bg-amber-400 text-slate-950 text-[10px] px-1.5 py-0.5 rounded font-black">
-                PDF
-              </span>
-            </button>
-          </div>
+        {/* Tactical Battalion Jurisdiction Card */}
+        {activeBattalion && (
+          <BattalionJurisdictionCard
+            battalion={activeBattalion.bat}
+            cpai={activeBattalion.cpai}
+            onClose={() => setActiveBattalion(null)}
+            onRecenter={() => handleLocateBattalion(activeBattalion.bat, activeBattalion.cpai)}
+            onOpenFullDetails={() => onSelectBattalion(activeBattalion.bat, activeBattalion.cpai)}
+            onOpenSubunidades={onOpenSubunidades}
+          />
         )}
 
-        {/* Dedicated City Search Bar positioned on top-center of CleanStaticMap */}
-        {onSelectCity && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 w-[94%] max-w-sm sm:max-w-md">
-            <CitySearchBar
-              onSelectCity={onSelectCity}
-              placeholder="🔍 Encontrar cidade (ex: Bacabal, Pinheiro, Balsas)..."
-            />
-          </div>
+        {/* City Jurisdiction Card */}
+        {activeCity && (
+          <CityJurisdictionCard
+            city={activeCity}
+            onClose={() => setActiveCity(null)}
+            onRecenter={() => handleLocateCity(activeCity)}
+            onOpenBattalionDetails={() => {
+              const cpai = allCPAIs.find((c) => c.id === activeCity.cpaiId);
+              const bat = cpai?.batalhoes.find((b) => b.id === activeCity.batalhaoId);
+              if (bat && cpai) {
+                onSelectBattalion(bat, cpai);
+              }
+            }}
+            onOpenAllSubunidades={() => onOpenSubunidades && onOpenSubunidades()}
+          />
         )}
 
         {/* Bottom Left Legend Box (Collapsible) */}
